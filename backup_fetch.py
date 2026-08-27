@@ -23,7 +23,11 @@ import urllib.request
 from datetime import datetime, timedelta
 from pathlib import Path
 
-FOLDER = Path(__file__).resolve().parent
+FOLDER = (
+    Path(sys.executable).resolve().parent
+    if getattr(sys, "frozen", False)
+    else Path(__file__).resolve().parent
+)
 CONFIG_PATH = FOLDER / "config.json"
 LOG_PATH = FOLDER / "backup_fetch.log"
 
