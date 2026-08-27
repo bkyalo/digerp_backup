@@ -4,4 +4,5 @@ backups/
 __pycache__/
 build/
 dist/
+Output/
 *.spec
