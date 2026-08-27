@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 """Download the nightly digerp database backup.
 
-Meant to be triggered by Windows Task Scheduler at (or shortly after)
-poll_start_time. The backup isn't always ready exactly on time, so this
-polls the backup URL every poll_interval_seconds until either the file
-shows up or poll_end_time passes.
+The backup itself is produced by a separate server on its own schedule
+(embedded in the filename as backup_hhmm, e.g. "0300"). This script is
+meant to be triggered by Windows Task Scheduler afterwards, e.g. 03:30,
+to give that server time to finish. It's not always done by then, so
+this polls the backup URL every poll_interval_seconds for up to
+poll_duration_minutes before giving up.
 
 Config comes from config.json (copy config.example.json and fill it in).
 """
@@ -18,7 +20,7 @@ import sys
 import time
 import urllib.error
 import urllib.request
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 FOLDER = Path(__file__).resolve().parent
@@ -39,24 +41,18 @@ def load_config() -> dict:
     if missing:
         sys.exit(f"config.json is missing: {', '.join(missing)}")
     config.setdefault("download_dir", "backups")
-    config.setdefault("poll_start_time", "03:00")
-    config.setdefault("poll_end_time", "03:05")
+    config.setdefault("backup_hhmm", "0300")
+    config.setdefault("poll_duration_minutes", 5)
     config.setdefault("poll_interval_seconds", 20)
     config.setdefault("basic_auth_user", "")
     config.setdefault("basic_auth_password", "")
     return config
 
 
-def backup_time_tag(poll_start_time: str) -> str:
-    """'03:00' -> '0300', matching the HHMM embedded in the backup filename."""
-    return poll_start_time.replace(":", "")
-
-
 def build_url_and_filename(config: dict, date_str: str) -> tuple[str, str]:
-    time_tag = backup_time_tag(config["poll_start_time"])
     filename = (
         f"{config['backup_prefix']}_{config['db_name']}_{config['company_id']}"
-        f"_{date_str}_{time_tag}.sql.gz"
+        f"_{date_str}_{config['backup_hhmm']}.sql.gz"
     )
     site_url = config["site_url"].rstrip("/")
     url = f"{site_url}/company/{config['company_id']}/backup/{filename}"
@@ -96,11 +92,6 @@ def try_download(url: str, dest_path: Path, config: dict) -> bool:
     return True
 
 
-def parse_time_today(hhmm: str, now: datetime) -> datetime:
-    hour, minute = (int(part) for part in hhmm.split(":"))
-    return now.replace(hour=hour, minute=minute, second=0, microsecond=0)
-
-
 def main() -> None:
     logging.basicConfig(
         level=logging.INFO,
@@ -121,7 +112,7 @@ def main() -> None:
         logging.info("Backup already downloaded: %s", dest_path)
         return
 
-    deadline = parse_time_today(config["poll_end_time"], now)
+    deadline = now + timedelta(minutes=config["poll_duration_minutes"])
     interval = config["poll_interval_seconds"]
 
     logging.info("Polling for %s (deadline %s)", url, deadline.strftime("%H:%M:%S"))

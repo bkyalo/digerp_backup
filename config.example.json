@@ -3,9 +3,9 @@
   "company_id": 0,
   "db_name": "kiambaa",
   "backup_prefix": "oytqnijs",
+  "backup_hhmm": "0300",
   "download_dir": "backups",
-  "poll_start_time": "03:00",
-  "poll_end_time": "03:05",
+  "poll_duration_minutes": 5,
   "poll_interval_seconds": 20,
   "basic_auth_user": "",
   "basic_auth_password": ""
