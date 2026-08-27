@@ -44,6 +44,11 @@ def load_config() -> dict:
     missing = [key for key in REQUIRED_KEYS if not config.get(key) and config.get(key) != 0]
     if missing:
         sys.exit(f"config.json is missing: {', '.join(missing)}")
+    if not config["site_url"].startswith(("http://", "https://")):
+        sys.exit(
+            f"config.json site_url must start with http:// or https:// "
+            f"(got: {config['site_url']!r})"
+        )
     config.setdefault("download_dir", "backups")
     config.setdefault("backup_hhmm", "0300")
     config.setdefault("poll_duration_minutes", 5)
@@ -126,7 +131,7 @@ def main() -> None:
         attempt += 1
         try:
             found = try_download(url, dest_path, config)
-        except (urllib.error.HTTPError, urllib.error.URLError) as exc:
+        except Exception as exc:  # noqa: BLE001 - log and keep retrying until deadline
             logging.warning("Attempt %d failed: %s", attempt, exc)
             found = False
 
