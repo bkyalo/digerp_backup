@@ -124,17 +124,28 @@ end;
 
 function RegisterTaskCommand(): String;
 begin
+  { -At takes a DateTime; building it with Get-Date -Hour/-Minute instead of
+    the bare string '3:30AM' avoids relying on the server's locale to parse
+    AM/PM, which can silently fail parameter binding on non-US locales. }
   Result :=
+    '$ErrorActionPreference = ''Stop'';' +
+    'try {' +
     '$action = New-ScheduledTaskAction -Execute ''' + ExpandConstant('{app}\{#MyAppExeName}') + ''';' +
-    '$trigger = New-ScheduledTaskTrigger -Daily -At 3:30AM;' +
+    '$at = Get-Date -Hour 3 -Minute 30 -Second 0;' +
+    '$trigger = New-ScheduledTaskTrigger -Daily -At $at;' +
     '$settings = New-ScheduledTaskSettingsSet -MultipleInstances IgnoreNew -StartWhenAvailable -AllowStartIfOnBatteries;' +
     'Register-ScheduledTask -TaskName ''{#MyTaskName}'' -Action $action -Trigger $trigger ' +
-    '-Settings $settings -User ''SYSTEM'' -RunLevel Highest -Force';
+    '-Settings $settings -User ''NT AUTHORITY\SYSTEM'' -RunLevel Highest -Force | Out-Null;' +
+    'Write-Output ''Task registered successfully.''' +
+    '} catch {' +
+    'Write-Error $_.Exception.Message;' +
+    'exit 1' +
+    '}';
 end;
 
 procedure CurStepChanged(CurStep: TSetupStep);
 var
-  ConfigPath, Cmd: String;
+  ConfigPath, TaskLogPath, Cmd: String;
   ResultCode: Integer;
 begin
   if CurStep = ssPostInstall then
@@ -144,9 +155,15 @@ begin
     if not FileExists(ConfigPath) then
       SaveStringToFile(ConfigPath, BuildConfigJson(), False);
 
-    Cmd := '-NoProfile -ExecutionPolicy Bypass -Command "' + RegisterTaskCommand() + '"';
-    if not Exec('powershell.exe', Cmd, '', SW_HIDE, ewWaitUntilTerminated, ResultCode) or (ResultCode <> 0) then
-      MsgBox('Could not register the scheduled task automatically. You can create it manually with schtasks or Task Scheduler (daily at 03:30).', mbError, MB_OK);
+    { Run via cmd.exe so stdout/stderr can be redirected to a log file --
+      Exec() alone can't capture powershell.exe's output, and a silent
+      non-terminating PowerShell error can otherwise exit 0 unnoticed. }
+    TaskLogPath := ExpandConstant('{app}\task_register.log');
+    Cmd := '/c powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "' +
+      RegisterTaskCommand() + '" > "' + TaskLogPath + '" 2>&1';
+    if not Exec('cmd.exe', Cmd, '', SW_HIDE, ewWaitUntilTerminated, ResultCode) or (ResultCode <> 0) then
+      MsgBox('Could not register the scheduled task automatically. See ' + TaskLogPath +
+        ' for details, or create it manually with schtasks (daily at 03:30).', mbError, MB_OK);
   end;
 end;
 
