@@ -59,7 +59,7 @@ begin
   Result := S <> '';
   for I := 1 to Length(S) do
   begin
-    if not (S[I] in ['0'..'9']) then
+    if (S[I] < '0') or (S[I] > '9') then
     begin
       Result := False;
       break;
