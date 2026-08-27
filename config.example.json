@@ -1,0 +1,12 @@
+{
+  "site_url": "https://kiambaa.digerp.com",
+  "company_id": 0,
+  "db_name": "kiambaa",
+  "backup_prefix": "oytqnijs",
+  "download_dir": "backups",
+  "poll_start_time": "03:00",
+  "poll_end_time": "03:05",
+  "poll_interval_seconds": 20,
+  "basic_auth_user": "",
+  "basic_auth_password": ""
+}

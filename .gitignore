@@ -1,0 +1,4 @@
+config.json
+backup_fetch.log
+backups/
+__pycache__/
