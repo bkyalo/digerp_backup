@@ -1,9 +1,12 @@
 ; Digerp Backup Fetch installer.
 ; Installs backup_fetch.exe, asks for the site's config values on a custom
-; wizard page, writes them to config.json in %ProgramData%\DigerpBackup (the
-; exe reads/writes config, downloaded backups, and its log there rather than
-; next to itself in Program Files, which is admin-write-only), and registers
-; a Scheduled Task that runs the exe daily at 03:30 as SYSTEM.
+; wizard page, writes them to config.json in <system drive>:\DigerpBackup
+; (e.g. C:\DigerpBackup -- the exe reads/writes config, downloaded backups,
+; and its log there rather than next to itself in Program Files, which is
+; admin-write-only), grants the Users group write access on that folder
+; (it would otherwise inherit write access for Administrators/SYSTEM only,
+; since this elevated installer is what creates it), and registers a
+; Scheduled Task that runs the exe daily at 03:30 as SYSTEM.
 ;
 ; Built by CI (see .github/workflows/build-installer.yml) with:
 ;   iscc installer.iss
@@ -44,7 +47,7 @@ procedure InitializeWizard;
 begin
   ConfigPage := CreateInputQueryPage(wpSelectDir,
     'Digerp Backup Settings', 'Enter the site details for this company',
-    'These values are written to config.json in %ProgramData%\DigerpBackup (not the install folder, so the exe can run without elevation). If one already exists there, its current values are shown below -- leave them as-is to keep them, or edit to update. Basic auth fields can be left blank if the backup URL needs no login.');
+    'These values are written to config.json in <system drive>:\DigerpBackup, e.g. C:\DigerpBackup (not the install folder, so the exe can run without elevation). If one already exists there, its current values are shown below -- leave them as-is to keep them, or edit to update. Basic auth fields can be left blank if the backup URL needs no login.');
   ConfigPage.Add('Site URL (e.g. https://kiambaa.digerp.com):', False);
   ConfigPage.Add('Database name (e.g. kiambaa):', False);
   ConfigPage.Add('Company ID (usually 0):', False);
@@ -108,7 +111,7 @@ begin
     of data that, previously, would have been silently discarded anyway. }
   if CurPageID = ConfigPage.ID then
   begin
-    ConfigPath := ExpandConstant('{commonappdata}\DigerpBackup\config.json');
+    ConfigPath := ExpandConstant('{sd}\DigerpBackup\config.json');
     if FileExists(ConfigPath) and LoadStringFromFile(ConfigPath, ExistingJson) then
     begin
       ConfigPage.Values[0] := GetJsonLineValue(ExistingJson, 'site_url');
@@ -218,24 +221,38 @@ var
 begin
   if CurStep = ssPostInstall then
   begin
-    { config.json lives in %ProgramData%\DigerpBackup, not the install
-      directory, so the exe can read/write its config, downloaded backups,
-      and log without needing elevation when run manually -- Program Files
-      is admin-write-only. The wizard page was pre-filled from any existing
-      config.json (see CurPageChanged), so what's here now is either the
-      prior values unchanged or deliberately edited -- always write it,
-      rather than silently discarding whatever the user just entered on a
-      reinstall. }
-    ForceDirectories(ExpandConstant('{commonappdata}\DigerpBackup'));
-    ConfigPath := ExpandConstant('{commonappdata}\DigerpBackup\config.json');
+    { config.json lives in the system drive's DigerpBackup folder (e.g.
+      C:\DigerpBackup), not the install directory, so the exe can read/
+      write its config, downloaded backups, and log without needing
+      elevation when run manually -- Program Files is admin-write-only.
+      The wizard page was pre-filled from any existing config.json (see
+      CurPageChanged), so what's here now is either the prior values
+      unchanged or deliberately edited -- always write it, rather than
+      silently discarding whatever the user just entered on a reinstall. }
+    TaskLogPath := ExpandConstant('{app}\task_register.log');
+    ForceDirectories(ExpandConstant('{sd}\DigerpBackup'));
+
+    { A folder this elevated installer creates would otherwise only inherit
+      write access for Administrators/SYSTEM -- Task Scheduler (running as
+      SYSTEM) would work, but a manual run under a normal account would hit
+      PermissionError writing the log/config/backups. S-1-5-32-545 is the
+      well-known, locale-independent SID for BUILTIN\Users, so this isn't
+      dependent on the group's display name (which varies by Windows
+      language edition). (OI)(CI) makes it inherit onto files/folders
+      created here later too. }
+    Exec('cmd.exe',
+      '/c icacls "' + ExpandConstant('{sd}\DigerpBackup') + '" /grant *S-1-5-32-545:(OI)(CI)M /T > "' +
+        TaskLogPath + '" 2>&1',
+      '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+
+    ConfigPath := ExpandConstant('{sd}\DigerpBackup\config.json');
     SaveStringToFile(ConfigPath, BuildConfigJson(), False);
 
     { Run via cmd.exe so stdout/stderr can be redirected to a log file --
       Exec() alone can't capture powershell.exe's output, and a silent
       non-terminating PowerShell error can otherwise exit 0 unnoticed. }
-    TaskLogPath := ExpandConstant('{app}\task_register.log');
     Cmd := '/c powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "' +
-      RegisterTaskCommand() + '" > "' + TaskLogPath + '" 2>&1';
+      RegisterTaskCommand() + '" >> "' + TaskLogPath + '" 2>&1';
     if not Exec('cmd.exe', Cmd, '', SW_HIDE, ewWaitUntilTerminated, ResultCode) or (ResultCode <> 0) then
       MsgBox('Could not register the scheduled task automatically. See ' + TaskLogPath +
         ' for details, or create it manually with schtasks (daily at 03:30).', mbError, MB_OK);

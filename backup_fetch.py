@@ -8,11 +8,14 @@ to give that server time to finish. It's not always done by then, so
 this polls the backup URL every poll_interval_seconds for up to
 poll_duration_minutes before giving up.
 
-config.json/backup_fetch.log/backups all live under %ProgramData%\\DigerpBackup,
-not next to the exe in Program Files -- the exe's own folder is admin-write-
-only, which would otherwise force even a manual test run into an elevated
-prompt. Copy config.example.json (shipped next to the exe) to that location
-and fill it in, or let the installer's wizard do it.
+config.json/backup_fetch.log/backups all live under <system drive>:\\DigerpBackup
+(e.g. C:\\DigerpBackup), not next to the exe in Program Files -- the exe's own
+folder is admin-write-only, which would otherwise force even a manual test
+run into an elevated prompt. The installer creates this folder and grants
+the Users group write access on it explicitly, since a folder it creates
+would otherwise only inherit write access for Administrators/SYSTEM. Copy
+config.example.json (shipped next to the exe) to that location and fill it
+in, or let the installer's wizard do it.
 """
 
 from __future__ import annotations
@@ -28,7 +31,7 @@ import urllib.request
 from datetime import datetime, timedelta
 from pathlib import Path
 
-DATA_DIR = Path(os.environ.get("ProgramData", r"C:\ProgramData")) / "DigerpBackup"
+DATA_DIR = Path(os.environ.get("SystemDrive", "C:") + "\\") / "DigerpBackup"
 CONFIG_PATH = DATA_DIR / "config.json"
 LOG_PATH = DATA_DIR / "backup_fetch.log"
 
