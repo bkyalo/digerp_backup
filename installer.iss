@@ -42,7 +42,7 @@ procedure InitializeWizard;
 begin
   ConfigPage := CreateInputQueryPage(wpSelectDir,
     'Digerp Backup Settings', 'Enter the site details for this company',
-    'These values are written to config.json. Basic auth fields can be left blank if the backup URL needs no login.');
+    'These values are written to config.json. If a config.json already exists here, its current values are shown below -- leave them as-is to keep them, or edit to update. Basic auth fields can be left blank if the backup URL needs no login.');
   ConfigPage.Add('Site URL (e.g. https://kiambaa.digerp.com):', False);
   ConfigPage.Add('Database name (e.g. kiambaa):', False);
   ConfigPage.Add('Company ID (usually 0):', False);
@@ -50,6 +50,71 @@ begin
   ConfigPage.Add('Basic auth password (optional):', True);
 
   ConfigPage.Values[2] := '0';
+end;
+
+function JsonUnescape(S: String): String;
+begin
+  { Reverse order from JsonEscape: undo the quote-escape before the
+    backslash-escape, or a real backslash immediately before an escaped
+    quote would be mishandled. }
+  StringChangeEx(S, '\"', '"', True);
+  StringChangeEx(S, '\\', '\', True);
+  Result := S;
+end;
+
+function GetJsonLineValue(const Json, Key: String): String;
+var
+  Lines: TStringList;
+  I, ColonPos: Integer;
+  Line, SearchKey, RawValue: String;
+begin
+  Result := '';
+  SearchKey := '"' + Key + '"';
+  Lines := TStringList.Create;
+  try
+    Lines.Text := Json;
+    for I := 0 to Lines.Count - 1 do
+    begin
+      Line := Trim(Lines[I]);
+      if Pos(SearchKey, Line) = 1 then
+      begin
+        ColonPos := Pos(':', Line);
+        if ColonPos > 0 then
+        begin
+          RawValue := Trim(Copy(Line, ColonPos + 1, Length(Line) - ColonPos));
+          if (RawValue <> '') and (RawValue[Length(RawValue)] = ',') then
+            RawValue := Copy(RawValue, 1, Length(RawValue) - 1);
+          if (Length(RawValue) >= 2) and (RawValue[1] = '"') and (RawValue[Length(RawValue)] = '"') then
+            RawValue := Copy(RawValue, 2, Length(RawValue) - 2);
+          Result := JsonUnescape(RawValue);
+        end;
+        break;
+      end;
+    end;
+  finally
+    Lines.Free;
+  end;
+end;
+
+procedure CurPageChanged(CurPageID: Integer);
+var
+  ConfigPath, ExistingJson: String;
+begin
+  { Pre-fill from an existing config.json (a prior install) so a reinstall
+    shows current values to review/edit instead of forcing blind re-entry
+    of data that, previously, would have been silently discarded anyway. }
+  if CurPageID = ConfigPage.ID then
+  begin
+    ConfigPath := ExpandConstant('{app}\config.json');
+    if FileExists(ConfigPath) and LoadStringFromFile(ConfigPath, ExistingJson) then
+    begin
+      ConfigPage.Values[0] := GetJsonLineValue(ExistingJson, 'site_url');
+      ConfigPage.Values[1] := GetJsonLineValue(ExistingJson, 'db_name');
+      ConfigPage.Values[2] := GetJsonLineValue(ExistingJson, 'company_id');
+      ConfigPage.Values[3] := GetJsonLineValue(ExistingJson, 'basic_auth_user');
+      ConfigPage.Values[4] := GetJsonLineValue(ExistingJson, 'basic_auth_password');
+    end;
+  end;
 end;
 
 function IsAllDigits(S: String): Boolean;
@@ -150,10 +215,12 @@ var
 begin
   if CurStep = ssPostInstall then
   begin
-    { Only seed config.json from the wizard answers on first install; never overwrite an existing one. }
+    { The wizard page was pre-filled from any existing config.json (see
+      CurPageChanged), so what's here now is either the prior values
+      unchanged or deliberately edited -- always write it, rather than
+      silently discarding whatever the user just entered on a reinstall. }
     ConfigPath := ExpandConstant('{app}\config.json');
-    if not FileExists(ConfigPath) then
-      SaveStringToFile(ConfigPath, BuildConfigJson(), False);
+    SaveStringToFile(ConfigPath, BuildConfigJson(), False);
 
     { Run via cmd.exe so stdout/stderr can be redirected to a log file --
       Exec() alone can't capture powershell.exe's output, and a silent
