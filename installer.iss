@@ -1,7 +1,9 @@
 ; Digerp Backup Fetch installer.
 ; Installs backup_fetch.exe, asks for the site's config values on a custom
-; wizard page, writes them to config.json, and registers a Scheduled Task
-; that runs the exe daily at 03:30 as SYSTEM.
+; wizard page, writes them to config.json in %ProgramData%\DigerpBackup (the
+; exe reads/writes config, downloaded backups, and its log there rather than
+; next to itself in Program Files, which is admin-write-only), and registers
+; a Scheduled Task that runs the exe daily at 03:30 as SYSTEM.
 ;
 ; Built by CI (see .github/workflows/build-installer.yml) with:
 ;   iscc installer.iss
@@ -42,7 +44,7 @@ procedure InitializeWizard;
 begin
   ConfigPage := CreateInputQueryPage(wpSelectDir,
     'Digerp Backup Settings', 'Enter the site details for this company',
-    'These values are written to config.json. If a config.json already exists here, its current values are shown below -- leave them as-is to keep them, or edit to update. Basic auth fields can be left blank if the backup URL needs no login.');
+    'These values are written to config.json in %ProgramData%\DigerpBackup (not the install folder, so the exe can run without elevation). If one already exists there, its current values are shown below -- leave them as-is to keep them, or edit to update. Basic auth fields can be left blank if the backup URL needs no login.');
   ConfigPage.Add('Site URL (e.g. https://kiambaa.digerp.com):', False);
   ConfigPage.Add('Database name (e.g. kiambaa):', False);
   ConfigPage.Add('Company ID (usually 0):', False);
@@ -106,7 +108,7 @@ begin
     of data that, previously, would have been silently discarded anyway. }
   if CurPageID = ConfigPage.ID then
   begin
-    ConfigPath := ExpandConstant('{app}\config.json');
+    ConfigPath := ExpandConstant('{commonappdata}\DigerpBackup\config.json');
     if FileExists(ConfigPath) and LoadStringFromFile(ConfigPath, ExistingJson) then
     begin
       ConfigPage.Values[0] := GetJsonLineValue(ExistingJson, 'site_url');
@@ -216,11 +218,16 @@ var
 begin
   if CurStep = ssPostInstall then
   begin
-    { The wizard page was pre-filled from any existing config.json (see
-      CurPageChanged), so what's here now is either the prior values
-      unchanged or deliberately edited -- always write it, rather than
-      silently discarding whatever the user just entered on a reinstall. }
-    ConfigPath := ExpandConstant('{app}\config.json');
+    { config.json lives in %ProgramData%\DigerpBackup, not the install
+      directory, so the exe can read/write its config, downloaded backups,
+      and log without needing elevation when run manually -- Program Files
+      is admin-write-only. The wizard page was pre-filled from any existing
+      config.json (see CurPageChanged), so what's here now is either the
+      prior values unchanged or deliberately edited -- always write it,
+      rather than silently discarding whatever the user just entered on a
+      reinstall. }
+    ForceDirectories(ExpandConstant('{commonappdata}\DigerpBackup'));
+    ConfigPath := ExpandConstant('{commonappdata}\DigerpBackup\config.json');
     SaveStringToFile(ConfigPath, BuildConfigJson(), False);
 
     { Run via cmd.exe so stdout/stderr can be redirected to a log file --

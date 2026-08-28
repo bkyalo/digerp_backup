@@ -8,7 +8,11 @@ to give that server time to finish. It's not always done by then, so
 this polls the backup URL every poll_interval_seconds for up to
 poll_duration_minutes before giving up.
 
-Config comes from config.json (copy config.example.json and fill it in).
+config.json/backup_fetch.log/backups all live under %ProgramData%\\DigerpBackup,
+not next to the exe in Program Files -- the exe's own folder is admin-write-
+only, which would otherwise force even a manual test run into an elevated
+prompt. Copy config.example.json (shipped next to the exe) to that location
+and fill it in, or let the installer's wizard do it.
 """
 
 from __future__ import annotations
@@ -16,6 +20,7 @@ from __future__ import annotations
 import base64
 import json
 import logging
+import os
 import sys
 import time
 import urllib.error
@@ -23,13 +28,9 @@ import urllib.request
 from datetime import datetime, timedelta
 from pathlib import Path
 
-FOLDER = (
-    Path(sys.executable).resolve().parent
-    if getattr(sys, "frozen", False)
-    else Path(__file__).resolve().parent
-)
-CONFIG_PATH = FOLDER / "config.json"
-LOG_PATH = FOLDER / "backup_fetch.log"
+DATA_DIR = Path(os.environ.get("ProgramData", r"C:\ProgramData")) / "DigerpBackup"
+CONFIG_PATH = DATA_DIR / "config.json"
+LOG_PATH = DATA_DIR / "backup_fetch.log"
 
 REQUIRED_KEYS = ["site_url", "company_id", "db_name", "backup_prefix"]
 
@@ -102,6 +103,7 @@ def try_download(url: str, dest_path: Path, config: dict) -> bool:
 
 
 def main() -> None:
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s %(levelname)s %(message)s",
@@ -109,7 +111,7 @@ def main() -> None:
     )
 
     config = load_config()
-    download_dir = FOLDER / config["download_dir"]
+    download_dir = DATA_DIR / config["download_dir"]
     download_dir.mkdir(parents=True, exist_ok=True)
 
     now = datetime.now()
